@@ -141,16 +141,24 @@ export class GroupHandler {
     // 3. 获取或创建会话
     let sessionId = chatSessionStore.getSessionId(chatId);
     if (!sessionId) {
-      // 如果没有绑定会话，自动创建一个
-      const title = `群聊会话-${chatId.slice(-4)}`;
+      // 获取群名作为 session title
+      let chatName: string | undefined;
+      try {
+        const chatInfo = await feishuClient.getChat(chatId);
+        if (chatInfo?.name) {
+          chatName = chatInfo.name;
+        }
+      } catch (error) {
+        console.warn('[Group] 获取群名失败，使用默认标题:', error);
+      }
+      const title = chatName || `群聊会话-${chatId.slice(-4)}`;
       const session = await opencodeClient.createSession(title);
       if (session) {
         sessionId = session.id;
-        // 尝试获取群名作为 title，或者用默认的
         chatSessionStore.setSession(chatId, sessionId, senderId, title, {
           chatType: 'group',
           sessionDirectory: session.directory,
-        }); // senderId 暂时作为 creator
+        });
       } else {
         await feishuClient.reply(messageId, '❌ 无法创建 OpenCode 会话');
         return;

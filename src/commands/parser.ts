@@ -30,6 +30,7 @@ export interface ParsedCommand {
   roleSpec?: string;
   sessionAction?: 'new' | 'switch' | 'list';
   sessionId?: string;      // session switch的目标ID
+  sessionDirectory?: string; // session new 指定的工作区目录
   clearScope?: 'all' | 'free_session'; // 清理范围
   clearSessionId?: string;
   permissionResponse?: 'y' | 'n' | 'yes' | 'no';
@@ -202,7 +203,8 @@ export function parseCommand(text: string): ParsedCommand {
           return { type: 'session', sessionAction: 'list' };
         }
         if (args[0].toLowerCase() === 'new') {
-          return { type: 'session', sessionAction: 'new' };
+          const directory = args.slice(1).join(' ').trim() || undefined;
+          return { type: 'session', sessionAction: 'new', ...(directory ? { sessionDirectory: directory } : {}) };
         }
         // 切换到指定会话
         return { type: 'session', sessionAction: 'switch', sessionId: args[0] };
@@ -338,7 +340,8 @@ export function getHelpText(): string {
 ⚙️ **会话管理**
 • \`/create_chat\` 或 \`/建群\` 打开建群卡片（下拉按 工作区/Session短ID/简介 展示，支持跨工作区）
 • \`/session\` 列出全部工作区会话（含未绑定与仅本地映射记录）
-• \`/session new\` 开启新话题 (重置上下文)
+• \`/session new\` 开启新话题 (重置上下文，群聊中自动以群名作为会话标题)
+• \`/session new <工作区路径>\` 在指定工作区下创建新会话
 • \`/session <sessionId>\` 手动绑定已有会话（支持 Web 端会话，需开启 \`ENABLE_MANUAL_SESSION_BIND\`）
 • \`新建会话窗口\` 自然语言触发 \`/session new\`
 • \`/clear\` 清空当前上下文 (同上)

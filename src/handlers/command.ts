@@ -710,13 +710,17 @@ export class CommandHandler {
     return normalized.slice(0, 4);
   }
 
-  private buildSessionTitle(chatType: 'p2p' | 'group', userId: string): string {
+  private buildSessionTitle(chatType: 'p2p' | 'group', userId: string, chatName?: string): string {
     if (chatType === 'p2p') {
       const shortUserId = this.getPrivateSessionShortId(userId);
       return `飞书私聊${shortUserId || '用户'}`;
     }
 
-    return `群聊重置-${Date.now().toString().slice(-4)}`;
+    if (chatName) {
+      return chatName;
+    }
+
+    return `群聊会话-${Date.now().toString().slice(-4)}`;
   }
 
   async handle(
@@ -742,13 +746,13 @@ export class CommandHandler {
 
         case 'session':
           if (command.sessionAction === 'new') {
-            await this.handleNewSession(chatId, messageId, context.senderId, context.chatType);
+            await this.handleNewSession(chatId, messageId, context.senderId, context.chatType, command.sessionDirectory);
           } else if (command.sessionAction === 'list') {
             await this.handleListSessions(chatId, messageId);
           } else if (command.sessionAction === 'switch' && command.sessionId) {
             await this.handleSwitchSession(chatId, messageId, context.senderId, command.sessionId, context.chatType);
           } else {
-            await feishuClient.reply(messageId, '用法: /session（列出会话） 或 /session new 或 /session <sessionId>');
+            await feishuClient.reply(messageId, '用法: /session（列出会话） 或 /session new [工作区路径] 或 /session <sessionId>');
           }
           break;
 
@@ -759,7 +763,7 @@ export class CommandHandler {
             await this.handleClearFreeSession(chatId, messageId, command.clearSessionId);
           } else {
             // 清空当前对话上下文（默认行为）
-            await this.handleNewSession(chatId, messageId, context.senderId, context.chatType); 
+            await this.handleNewSession(chatId, messageId, context.senderId, context.chatType);
           }
           break;
 
@@ -849,19 +853,42 @@ export class CommandHandler {
     chatId: string,
     messageId: string,
     userId: string,
-    chatType: 'p2p' | 'group'
+    chatType: 'p2p' | 'group',
+    directory?: string
   ): Promise<void> {
-    // 1. 创建新会话
-    const title = this.buildSessionTitle(chatType, userId);
-    const session = await opencodeClient.createSession(title);
+    // 1. 展开 ~ 为实际 home 目录
+    if (directory) {
+      if (directory.startsWith('~/') || directory === '~') {
+        const home = process.env.HOME || process.env.USERPROFILE || '';
+        directory = home + directory.slice(1);
+      }
+    }
+
+    // 2. 获取群名作为 session title
+    let chatName: string | undefined;
+    if (chatType === 'group') {
+      try {
+        const chatInfo = await feishuClient.getChat(chatId);
+        if (chatInfo?.name) {
+          chatName = chatInfo.name;
+        }
+      } catch (error) {
+        console.warn('[Command] 获取群名失败，使用默认标题:', error);
+      }
+    }
+
+    // 3. 创建新会话
+    const title = this.buildSessionTitle(chatType, userId, chatName);
+    const session = await opencodeClient.createSession(title, directory);
     
     if (session) {
-      // 2. 更新绑定
+      // 4. 更新绑定
       chatSessionStore.setSession(chatId, session.id, userId, title, {
         chatType,
         sessionDirectory: session.directory,
       });
-      await feishuClient.reply(messageId, `✅ 已创建新会话窗口\nID: ${session.id}`);
+      const dirInfo = directory ? `\n工作区: ${session.directory}` : '';
+      await feishuClient.reply(messageId, `✅ 已创建新会话窗口\nID: ${session.id}${dirInfo}`);
     } else {
       await feishuClient.reply(messageId, '❌ 创建会话失败');
     }

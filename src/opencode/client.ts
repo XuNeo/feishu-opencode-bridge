@@ -1021,11 +1021,13 @@ class OpencodeClientWrapper extends EventEmitter {
     return null;
   }
 
-  // 创建新会话
-  async createSession(title?: string): Promise<Session> {
+  // 创建新会话（支持指定工作区目录）
+  async createSession(title?: string, directory?: string): Promise<Session> {
     const client = this.getClient();
+    const normalizedDirectory = this.normalizeDirectory(directory);
     const result = await client.session.create({
       body: { title: title || '新对话' },
+      ...(normalizedDirectory ? { query: { directory: normalizedDirectory } } : {}),
     });
     return result.data!;
   }
