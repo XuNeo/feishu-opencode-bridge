@@ -317,6 +317,7 @@ node scripts/deploy.mjs status
 | `PERMISSION_REQUEST_TIMEOUT_MS` | 否 | `0` | 权限请求在桥接侧的保留时长（毫秒）；`<=0` 表示不超时，持续等待回复 |
 | `OUTPUT_UPDATE_INTERVAL` | 否 | `3000` | 输出刷新间隔（ms） |
 | `ATTACHMENT_MAX_SIZE` | 否 | `52428800` | 附件大小上限（字节） |
+| `COMPLETION_NOTIFY` | 否 | `reaction` | AI 完成时通知方式：`mention`（@用户）/ `reaction`（表情回复）/ `both`（两者都发）/ `none`（关闭） |
 
 注意：`TOOL_WHITELIST` 做字符串匹配，权限事件可能使用 `permission` 字段值（例如 `external_directory`），请按实际标识配置。
 
@@ -406,7 +407,8 @@ node scripts/deploy.mjs status
 | `/stop` | 中断当前会话执行 |
 | `/undo` | 撤回上一轮交互（OpenCode + 飞书同步） |
 | `/session` | 列出全部工作区会话（含未绑定与仅本地映射记录） |
-| `/session new` | 新建会话并重置上下文 |
+| `/session new` | 新建会话并重置上下文（群聊中自动以群名作为会话标题） |
+| `/session new <工作区路径>` | 在指定工作区目录下创建新会话 |
 | `/session <sessionId>` | 手动绑定已有 OpenCode 会话（支持 Web 端创建的跨工作区会话；需启用 `ENABLE_MANUAL_SESSION_BIND`） |
 | `新建会话窗口` | 自然语言触发新建会话（等价 `/session new`） |
 | `/clear` | 等价于 `/session new` |
