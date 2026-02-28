@@ -298,6 +298,40 @@ export class GroupHandler {
       }
   }
 
+  // 从卡片交互提交问题答案（无 replyMessageId）
+  async submitQuestionFromCard(
+    pending: PendingQuestion,
+    chatId: string
+  ): Promise<void> {
+      const answers: string[][] = [];
+      const totalQuestions = pending.request.questions.length;
+
+      for (let i = 0; i < totalQuestions; i++) {
+        const custom = (pending.draftCustomAnswers[i] || '').trim();
+        if (custom) {
+          answers.push([custom]);
+        } else {
+          answers.push(pending.draftAnswers[i] || []);
+        }
+      }
+
+      console.log(`[Group] 卡片提交问题回答: requestId=${pending.request.id.slice(0, 8)}...`);
+
+      this.ensureStreamingBuffer(
+        chatId,
+        pending.request.sessionID,
+        null
+      );
+
+      const success = await opencodeClient.replyQuestion(pending.request.id, answers);
+
+      if (success) {
+          questionHandler.remove(pending.request.id);
+          outputBuffer.touch(`chat:${chatId}`);
+      } else {
+          console.error('[Group] 卡片提交问题回答失败');
+      }
+  }
 
   // 清除上下文
   private async handleClear(chatId: string, messageId: string): Promise<void> {
@@ -320,7 +354,7 @@ export class GroupHandler {
     chatId: string,
     messageId: string,
     attachments?: FeishuAttachment[],
-    config?: { preferredModel?: string; preferredAgent?: string; preferredEffort?: EffortLevel },
+    config?: { preferredModel?: string; preferredAgent?: string; preferredEffort?: EffortLevel; sessionDirectory?: string },
     promptEffort?: EffortLevel
   ): Promise<void> {
     const bufferKey = `chat:${chatId}`;
@@ -381,6 +415,7 @@ export class GroupHandler {
           modelId,
           agent: config?.preferredAgent,
           ...(variant ? { variant } : {}),
+          directory: config?.sessionDirectory,
         }
       );
 

@@ -310,11 +310,15 @@ function appendAuthHint(message: string, statusCode?: number): string {
 
 class OpencodeClientWrapper extends EventEmitter {
   private client: SdkOpencodeClient | null = null;
-  private eventAbortController: AbortController | null = null;
-  private eventReconnectTimer: NodeJS.Timeout | null = null;
-  private eventReconnectAttempt = 0;
+
+  // Multi-directory event stream management
+  private directoryStreams = new Map<string, {
+    controller: AbortController;
+    active: boolean;
+    reconnectTimer: NodeJS.Timeout | null;
+    reconnectAttempt: number;
+  }>();
   private eventListeningEnabled = false;
-  private eventStreamActive = false;
 
   constructor() {
     super();
@@ -348,8 +352,8 @@ class OpencodeClientWrapper extends EventEmitter {
         console.log('[OpenCode] 已连接');
         this.eventListeningEnabled = true;
         
-        // 启动事件监听
-        void this.startEventListener();
+        // 启动默认事件监听（无 directory）
+        void this.ensureDirectoryEventStream();
         return true;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -365,89 +369,107 @@ class OpencodeClientWrapper extends EventEmitter {
     }
   }
 
-  private clearEventReconnectTimer(): void {
-    if (this.eventReconnectTimer) {
-      clearTimeout(this.eventReconnectTimer);
-      this.eventReconnectTimer = null;
+  private getStreamKey(directory?: string): string {
+    return directory?.trim() || '';
+  }
+
+  /** Ensure an SSE event stream exists for the given directory. */
+  ensureDirectoryEventStream(directory?: string): void {
+    if (!this.client || !this.eventListeningEnabled) return;
+    const key = this.getStreamKey(directory);
+    const existing = this.directoryStreams.get(key);
+    if (existing?.active) return;
+    void this.startDirectoryEventListener(key);
+  }
+
+  private clearStreamReconnectTimer(key: string): void {
+    const stream = this.directoryStreams.get(key);
+    if (stream?.reconnectTimer) {
+      clearTimeout(stream.reconnectTimer);
+      stream.reconnectTimer = null;
     }
   }
 
-  private scheduleEventReconnect(reason: string): void {
-    if (!this.eventListeningEnabled || !this.client) {
-      return;
-    }
-
-    if (this.eventReconnectTimer) {
-      return;
-    }
+  private scheduleStreamReconnect(key: string, reason: string): void {
+    if (!this.eventListeningEnabled || !this.client) return;
+    const stream = this.directoryStreams.get(key);
+    if (!stream || stream.reconnectTimer) return;
 
     const maxBackoffMs = 15000;
     const baseBackoffMs = 2000;
-    const step = Math.min(this.eventReconnectAttempt, 4);
+    const step = Math.min(stream.reconnectAttempt, 4);
     const delay = Math.min(baseBackoffMs * Math.pow(2, step), maxBackoffMs);
-    this.eventReconnectAttempt += 1;
+    stream.reconnectAttempt += 1;
 
-    console.warn(`[OpenCode] ${reason}，将在 ${Math.round(delay / 1000)} 秒后重连事件流（第 ${this.eventReconnectAttempt} 次）`);
-    this.eventReconnectTimer = setTimeout(() => {
-      this.eventReconnectTimer = null;
-      void this.startEventListener();
+    const label = key || '(default)';
+    console.warn(`[OpenCode] ${reason} (dir=${label})，将在 ${Math.round(delay / 1000)} 秒后重连事件流（第 ${stream.reconnectAttempt} 次）`);
+    stream.reconnectTimer = setTimeout(() => {
+      const s = this.directoryStreams.get(key);
+      if (s) s.reconnectTimer = null;
+      void this.startDirectoryEventListener(key);
     }, delay);
   }
 
-  // 启动SSE事件监听
-  private async startEventListener(): Promise<void> {
+  private async startDirectoryEventListener(key: string): Promise<void> {
     if (!this.client || !this.eventListeningEnabled) return;
-    if (this.eventStreamActive) return;
 
-    this.eventStreamActive = true;
-    this.clearEventReconnectTimer();
+    const existing = this.directoryStreams.get(key);
+    if (existing?.active) return;
 
     const controller = new AbortController();
-    if (this.eventAbortController) {
-      this.eventAbortController.abort();
+    // Abort previous controller for this key if lingering
+    if (existing?.controller) {
+      existing.controller.abort();
     }
-    this.eventAbortController = controller;
+
+    const streamState = {
+      controller,
+      active: true,
+      reconnectTimer: existing?.reconnectTimer ?? null,
+      reconnectAttempt: existing?.reconnectAttempt ?? 0,
+    };
+    this.directoryStreams.set(key, streamState);
+    this.clearStreamReconnectTimer(key);
+
+    const label = key || '(default)';
 
     try {
-      const events = await this.client.event.subscribe();
-      console.log('[OpenCode] 事件流订阅成功');
-      this.eventReconnectAttempt = 0;
-      
-      // 异步处理事件流
+      const subscribeOpts = key
+        ? { query: { directory: key } }
+        : undefined;
+      const events = await this.client.event.subscribe(subscribeOpts);
+      console.log(`[OpenCode] 事件流订阅成功 (dir=${label})`);
+      streamState.reconnectAttempt = 0;
+
       (async () => {
         try {
           for await (const event of events.stream) {
-            if (controller.signal.aborted || !this.eventListeningEnabled) {
-              break;
-            }
-
-            // Debug log for permission requests to catch missing ones
+            if (controller.signal.aborted || !this.eventListeningEnabled) break;
             if (event.type.toLowerCase().includes('permission')) {
-                 console.log(`[OpenCode] 收到底层事件: ${event.type}`, JSON.stringify(event.properties || {}).slice(0, 1200));
+              console.log(`[OpenCode] 收到底层事件: ${event.type}`, JSON.stringify(event.properties || {}).slice(0, 1200));
             }
             this.handleEvent(event);
           }
-
           if (!controller.signal.aborted && this.eventListeningEnabled) {
-            this.scheduleEventReconnect('事件流已结束');
+            this.scheduleStreamReconnect(key, '事件流已结束');
           }
         } catch (error) {
           if (!controller.signal.aborted && this.eventListeningEnabled) {
-            console.error('[OpenCode] 事件流中断:', error);
-            this.scheduleEventReconnect('事件流中断');
+            console.error(`[OpenCode] 事件流中断 (dir=${label}):`, error);
+            this.scheduleStreamReconnect(key, '事件流中断');
           }
         } finally {
-          if (this.eventAbortController === controller) {
-            this.eventAbortController = null;
+          const current = this.directoryStreams.get(key);
+          if (current?.controller === controller) {
+            current.active = false;
           }
-          this.eventStreamActive = false;
         }
       })();
     } catch (error) {
-      console.error('[OpenCode] 无法订阅事件:', error);
-      this.eventStreamActive = false;
+      console.error(`[OpenCode] 无法订阅事件 (dir=${label}):`, error);
+      streamState.active = false;
       if (!controller.signal.aborted && this.eventListeningEnabled) {
-        this.scheduleEventReconnect('订阅失败');
+        this.scheduleStreamReconnect(key, '订阅失败');
       }
     }
   }
@@ -588,6 +610,15 @@ class OpencodeClientWrapper extends EventEmitter {
     return normalized.length > 0 ? normalized : undefined;
   }
 
+  private buildUrlWithDirectory(path: string, directory?: string): string {
+    const normalizedDirectory = this.normalizeDirectory(directory);
+    if (!normalizedDirectory) {
+      return `${opencodeConfig.baseUrl}${path}`;
+    }
+    const separator = path.includes('?') ? '&' : '?';
+    return `${opencodeConfig.baseUrl}${path}${separator}directory=${encodeURIComponent(normalizedDirectory)}`;
+  }
+
   // 发送消息并等待响应
   async sendMessage(
     sessionId: string,
@@ -686,12 +717,16 @@ class OpencodeClientWrapper extends EventEmitter {
       modelId?: string;
       agent?: string;
       variant?: string;
+      directory?: string;
     }
   ): Promise<void> {
     this.getClient();
     const model = this.resolveModelOption(options);
+    const directory = this.normalizeDirectory(options?.directory);
+    if (directory) this.ensureDirectoryEventStream(directory);
 
-    const response = await fetch(`${opencodeConfig.baseUrl}/session/${sessionId}/prompt_async`, {
+    const url = this.buildUrlWithDirectory(`/session/${sessionId}/prompt_async`, options?.directory);
+    const response = await fetch(url, {
       method: 'POST',
       headers: withOpencodeAuthorizationHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
@@ -714,9 +749,12 @@ class OpencodeClientWrapper extends EventEmitter {
   async sendCommand(
     sessionId: string,
     command: string,
-    args: string
+    args: string,
+    directory?: string
   ): Promise<{ info: Message; parts: Part[] }> {
     const client = this.getClient();
+    const normalizedDirectory = this.normalizeDirectory(directory);
+    if (normalizedDirectory) this.ensureDirectoryEventStream(normalizedDirectory);
 
     const result = await client.session.command({
       path: { id: sessionId },
@@ -724,6 +762,7 @@ class OpencodeClientWrapper extends EventEmitter {
         command,
         arguments: args,
       },
+      ...(normalizedDirectory ? { query: { directory: normalizedDirectory } } : {}),
     });
 
     if (result.error) {
@@ -742,9 +781,11 @@ class OpencodeClientWrapper extends EventEmitter {
     sessionId: string,
     command: string,
     agent: string,
-    options?: { providerId?: string; modelId?: string }
+    options?: { providerId?: string; modelId?: string; directory?: string }
   ): Promise<ShellExecutionResult> {
     this.getClient();
+    const directory = this.normalizeDirectory(options?.directory);
+    if (directory) this.ensureDirectoryEventStream(directory);
 
     const model = options?.providerId && options?.modelId
       ? {
@@ -753,7 +794,8 @@ class OpencodeClientWrapper extends EventEmitter {
         }
       : undefined;
 
-    const response = await fetch(`${opencodeConfig.baseUrl}/session/${sessionId}/shell`, {
+    const url = this.buildUrlWithDirectory(`/session/${sessionId}/shell`, options?.directory);
+    const response = await fetch(url, {
       method: 'POST',
       headers: withOpencodeAuthorizationHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
@@ -795,14 +837,17 @@ class OpencodeClientWrapper extends EventEmitter {
     return { parts };
   }
 
-  async summarizeSession(sessionId: string, providerId: string, modelId: string): Promise<boolean> {
+  async summarizeSession(sessionId: string, providerId: string, modelId: string, directory?: string): Promise<boolean> {
     const client = this.getClient();
+    const normalizedDirectory = this.normalizeDirectory(directory);
+    if (normalizedDirectory) this.ensureDirectoryEventStream(normalizedDirectory);
     const result = await client.session.summarize({
       path: { id: sessionId },
       body: {
         providerID: providerId,
         modelID: modelId,
       },
+      ...(normalizedDirectory ? { query: { directory: normalizedDirectory } } : {}),
     });
 
     if (result.error) {
@@ -818,12 +863,15 @@ class OpencodeClientWrapper extends EventEmitter {
   }
 
   // 撤回消息
-  async revertMessage(sessionId: string, messageId: string): Promise<boolean> {
+  async revertMessage(sessionId: string, messageId: string, directory?: string): Promise<boolean> {
     const client = this.getClient();
+    const normalizedDirectory = this.normalizeDirectory(directory);
+    if (normalizedDirectory) this.ensureDirectoryEventStream(normalizedDirectory);
     try {
       const result = await client.session.revert({
         path: { id: sessionId },
         body: { messageID: messageId },
+        ...(normalizedDirectory ? { query: { directory: normalizedDirectory } } : {}),
       });
       return Boolean(result.data);
     } catch (error) {
@@ -833,12 +881,14 @@ class OpencodeClientWrapper extends EventEmitter {
   }
 
   // 中断会话执行
-  async abortSession(sessionId: string): Promise<boolean> {
+  async abortSession(sessionId: string, directory?: string): Promise<boolean> {
     const client = this.getClient();
+    const normalizedDirectory = this.normalizeDirectory(directory);
 
     try {
       const result = await client.session.abort({
         path: { id: sessionId },
+        ...(normalizedDirectory ? { query: { directory: normalizedDirectory } } : {}),
       });
       return result.data === true;
     } catch (error) {
@@ -1187,17 +1237,21 @@ class OpencodeClientWrapper extends EventEmitter {
   // 断开连接
   disconnect(): void {
     this.eventListeningEnabled = false;
-    this.eventStreamActive = false;
-    this.clearEventReconnectTimer();
-    this.eventReconnectAttempt = 0;
-    if (this.eventAbortController) {
-      this.eventAbortController.abort();
-      this.eventAbortController = null;
+    // Abort all directory event streams
+    for (const [key, stream] of this.directoryStreams.entries()) {
+      if (stream.reconnectTimer) {
+        clearTimeout(stream.reconnectTimer);
+      }
+      stream.controller.abort();
+      stream.active = false;
     }
+    this.directoryStreams.clear();
     this.client = null;
     console.log('[OpenCode] 已断开连接');
   }
 }
+
+
 
 // 单例导出
 export const opencodeClient = new OpencodeClientWrapper();

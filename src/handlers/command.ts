@@ -696,7 +696,7 @@ export class CommandHandler {
       return;
     }
 
-    const compacted = await opencodeClient.summarizeSession(sessionId, model.providerId, model.modelId);
+    const compacted = await opencodeClient.summarizeSession(sessionId, model.providerId, model.modelId, chatSessionStore.getSession(chatId)?.sessionDirectory);
     if (!compacted) {
       await feishuClient.reply(messageId, `❌ 上下文压缩失败（模型: ${model.providerId}:${model.modelId}）`);
       return;
@@ -770,7 +770,7 @@ export class CommandHandler {
         case 'stop':
           const sessionId = chatSessionStore.getSessionId(chatId);
           if (sessionId) {
-            await opencodeClient.abortSession(sessionId);
+            await opencodeClient.abortSession(sessionId, chatSessionStore.getSession(chatId)?.sessionDirectory);
             await feishuClient.reply(messageId, '⏹️ 已发送中断请求');
           } else {
             await feishuClient.reply(messageId, '当前没有活跃的会话');
@@ -1669,7 +1669,7 @@ export class CommandHandler {
         }
 
         const shellAgent = await this.resolveShellAgent(chatId);
-        const result = await opencodeClient.sendShellCommand(sessionId, shellCommand, shellAgent);
+        const result = await opencodeClient.sendShellCommand(sessionId, shellCommand, shellAgent, { directory: chatSessionStore.getSession(chatId)?.sessionDirectory });
         const output = this.formatOutput(result.parts);
         if (output !== '(无输出)') {
           await feishuClient.reply(messageId, output);
@@ -1681,7 +1681,7 @@ export class CommandHandler {
       }
 
       // 使用专门的 sendCommand 方法
-      const result = await opencodeClient.sendCommand(sessionId, commandName, commandArgs);
+      const result = await opencodeClient.sendCommand(sessionId, commandName, commandArgs, chatSessionStore.getSession(chatId)?.sessionDirectory);
 
       // 处理返回结果
       if (result && result.parts) {
@@ -1884,7 +1884,7 @@ export class CommandHandler {
             }
 
             if (targetRevertId) {
-                 await opencodeClient.revertMessage(session.sessionId, targetRevertId);
+                 await opencodeClient.revertMessage(session.sessionId, targetRevertId, session.sessionDirectory);
             }
         }
 

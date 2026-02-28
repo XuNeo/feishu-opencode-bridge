@@ -74,7 +74,7 @@ export class CardActionHandler {
     const session = chatId ? chatSessionStore.getSession(chatId) : null;
     if (session?.sessionId) {
       try {
-        await opencodeClient.abortSession(session.sessionId);
+        await opencodeClient.abortSession(session.sessionId, session.sessionDirectory);
         console.log(`[CardAction] 已中断会话: ${session.sessionId}`);
       } catch (e) {
         console.error('[CardAction] 中断会话失败:', e);
