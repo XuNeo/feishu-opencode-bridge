@@ -448,22 +448,24 @@ async function main() {
     return undefined;
   };
 
+  const isEmptyObject = (val: unknown): boolean =>
+    typeof val === 'object' && val !== null && !Array.isArray(val) && Object.keys(val as Record<string, unknown>).length === 0;
+
   const buildToolTraceOutput = (
     part: Record<string, unknown>,
-    status: ToolRuntimeState['status'],
-    withInput: boolean
+    status: ToolRuntimeState['status']
   ): string | undefined => {
     const state = asRecord(part.state);
-    const inputValue = withInput
-      ? pickFirstDefined(
-          part.input,
-          part.args,
-          part.arguments,
-          state?.input,
-          state?.args,
-          state?.arguments
-        )
-      : undefined;
+    // 始终尝试读取 input，过滤掉 SDK pending 状态发的空占位对象 {}
+    const rawInput = pickFirstDefined(
+      part.input,
+      part.args,
+      part.arguments,
+      state?.input,
+      state?.args,
+      state?.arguments
+    );
+    const inputValue = isEmptyObject(rawInput) ? undefined : rawInput;
     const outputValue = status === 'failed'
       ? pickFirstDefined(state?.error, state?.output, part.error)
       : pickFirstDefined(state?.output, state?.result, state?.message, part.output, part.result);
@@ -509,6 +511,11 @@ async function main() {
     const prev = previous.trim();
     if (prev === next) {
       return previous;
+    }
+
+    // 如果旧内容仅是状态占位文本，直接用新内容替换
+    if (prev.startsWith('状态更新：')) {
+      return clipToolTrace(next);
     }
 
     if (next.startsWith(prev) || next.includes(prev)) {
@@ -1467,7 +1474,7 @@ async function main() {
           setCorrelationChatRef(messageChatMap, toolPart.messageID, chatId);
           setCorrelationChatRef(messageChatMap, toolPart.messageId, chatId);
           const previous = getOrCreateToolStateBucket(bufferKey).get(toolKey);
-          const output = buildToolTraceOutput(toolPart, status, !previous || !previous.output);
+          const output = buildToolTraceOutput(toolPart, status);
 
           upsertToolState(bufferKey, toolKey, {
             name: toolName,
