@@ -89,6 +89,10 @@ type OpencodePartInput = { type: 'text'; text: string } | OpencodeFilePartInput;
 export type QuestionSkipActionResult = 'applied' | 'not_found' | 'stale_card' | 'invalid_state';
 
 export class GroupHandler {
+  // 群成员数缓存（避免每条消息都调 API）
+  private memberCountCache = new Map<string, { count: number; expireAt: number }>();
+  private static MEMBER_COUNT_TTL_MS = 5 * 60 * 1000; // 5 分钟
+
   private ensureStreamingBuffer(chatId: string, sessionId: string, replyMessageId: string | null): void {
     const key = `chat:${chatId}`;
     const current = outputBuffer.get(key);
@@ -127,6 +131,24 @@ export class GroupHandler {
     return mentions.some(m => m.id.open_id === botId);
   }
 
+  // 判断是否为小群（仅 1 个真人 + 机器人），小群无需 @机器人
+  private async isSmallGroup(chatId: string): Promise<boolean> {
+    const now = Date.now();
+    const cached = this.memberCountCache.get(chatId);
+    if (cached && cached.expireAt > now) {
+      return cached.count <= 2;
+    }
+    try {
+      const members = await feishuClient.getChatMembers(chatId);
+      this.memberCountCache.set(chatId, { count: members.length, expireAt: now + GroupHandler.MEMBER_COUNT_TTL_MS });
+      return members.length <= 2;
+    } catch {
+      // API 失败时保守处理：不跳过 @要求
+      return false;
+    }
+  }
+
+
 
   // 处理群聊消息
   async handleMessage(event: FeishuMessageEvent): Promise<void> {
@@ -147,12 +169,15 @@ export class GroupHandler {
     }
 
     // 2. @机器人检测：开启 REQUIRE_MENTION 时，普通消息必须 @机器人 才响应
-    //    例外：当前有待回答问题时仍允许直接回复（保持问答流畅）
+    //    例外：小群（≤2人）、待回答问题不要求 @
     if (userConfig.requireMention && !this.isBotMentioned(event.mentions)) {
-      // 待回答问题例外：允许直接回复
       const hasPendingQuestion = questionHandler.getByConversationKey(`chat:${chatId}`);
       if (!hasPendingQuestion) {
-        return; // 静默忽略，不打扰正常聊天
+        // 小群无需 @：只有 1 个真人 + 机器人时，直接响应
+        const smallGroup = await this.isSmallGroup(chatId);
+        if (!smallGroup) {
+          return; // 多人群静默忽略，不打扰正常聊天
+        }
       }
     }
 
