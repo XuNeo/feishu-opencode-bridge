@@ -189,7 +189,8 @@ class OutputBuffer {
         await this.updateCallback(buffer);
       } catch (error) {
         buffer.dirty = true;
-        throw error;
+        console.error(`[OutputBuffer] triggerUpdate 回调异常 (key=${key}, status=${buffer.status}):`, error);
+        this.scheduleUpdate(key);
       }
     }
   }

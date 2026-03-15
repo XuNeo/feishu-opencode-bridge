@@ -882,7 +882,12 @@ async function main() {
       !pendingPermission &&
       !pendingQuestion &&
       buffer.status === 'running'
-    ) return;
+    ) {
+      console.log(`[Card][DIAG] 跳过更新 (无新内容): key=${buffer.key}, status=${buffer.status}`);
+      return;
+    }
+
+    console.log(`[Card][DIAG] 开始更新: key=${buffer.key}, status=${buffer.status}, textLen=${text.length}, tools=${buffer.tools.length}, segments=${timelineSegments.length}`);
 
     const current = streamContentMap.get(buffer.key) || { text: '', thinking: '' };
     current.text += text;
@@ -956,11 +961,13 @@ async function main() {
           continue;
         }
 
+        console.warn(`[Card][DIAG] updateCard 失败，尝试 sendCard 替代: key=${buffer.key}, msgId=${existingMessageId.slice(0, 16)}`);
         const replacementMessageId = await feishuClient.sendCard(buffer.chatId, card);
         if (replacementMessageId) {
           void feishuClient.deleteMessage(existingMessageId).catch(() => undefined);
           nextMessageIds.push(replacementMessageId);
         } else {
+          console.error(`[Card][DIAG] sendCard 替代也失败: key=${buffer.key}`);
           nextMessageIds.push(existingMessageId);
         }
         continue;
@@ -1448,7 +1455,12 @@ async function main() {
       if (!sessionID) return;
 
       const chatId = chatSessionStore.getChatId(sessionID);
-      if (!chatId) return;
+      if (!chatId) {
+        console.log(`[SSE][DIAG] messagePartUpdated 无法匹配 chatId: sessionID=${sessionID}, partType=${part?.type}`);
+        return;
+      }
+
+      console.log(`[SSE][DIAG] 收到事件: partType=${part?.type || 'delta'}, session=${sessionID.slice(0, 8)}, chat=${chatId.slice(0, 12)}, deltaLen=${typeof delta === 'string' ? delta.length : 0}`);
 
       const bufferKey = `chat:${chatId}`;
       if (!outputBuffer.get(bufferKey)) {
