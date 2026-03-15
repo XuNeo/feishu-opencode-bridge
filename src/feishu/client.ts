@@ -65,6 +65,9 @@ function buildFallbackInteractiveCard(sourceCard: object): object {
       title?: { content?: unknown };
       template?: unknown;
     };
+    body?: {
+      elements?: Array<{ tag?: string; content?: string }>;
+    };
   };
   const rawTitle = cardRecord.header?.title?.content;
   const title = typeof rawTitle === 'string' && rawTitle.trim()
@@ -74,6 +77,35 @@ function buildFallbackInteractiveCard(sourceCard: object): object {
   const template = typeof rawTemplate === 'string' && rawTemplate.trim()
     ? rawTemplate.trim()
     : 'blue';
+
+  const FALLBACK_MAX_LENGTH = 3000;
+  const elements: Array<{ tag: string; content: string }> = [];
+  let totalLength = 0;
+
+  const sourceElements = cardRecord.body?.elements || [];
+  for (const el of sourceElements) {
+    if (totalLength >= FALLBACK_MAX_LENGTH) break;
+    if (el.tag === 'markdown' && typeof el.content === 'string' && el.content.trim()) {
+      const remaining = FALLBACK_MAX_LENGTH - totalLength;
+      const text = el.content.length > remaining
+        ? el.content.slice(0, remaining) + '\n\n... (内容已截断)'
+        : el.content;
+      elements.push({ tag: 'markdown', content: text });
+      totalLength += text.length;
+    }
+  }
+
+  if (elements.length === 0) {
+    elements.push({
+      tag: 'markdown',
+      content: '⚠️ 卡片内容过长，已自动精简。请在 OpenCode Web 查看完整输出。',
+    });
+  } else {
+    elements.push({
+      tag: 'markdown',
+      content: '---\n⚠️ 以上为精简内容，完整输出请在 OpenCode Web 查看。',
+    });
+  }
 
   return {
     schema: '2.0',
@@ -88,12 +120,7 @@ function buildFallbackInteractiveCard(sourceCard: object): object {
       template,
     },
     body: {
-      elements: [
-        {
-          tag: 'markdown',
-          content: '⚠️ 卡片内容过长或结构超限，已自动精简显示。\n请在 OpenCode Web 查看完整输出。',
-        },
-      ],
+      elements,
     },
   };
 }

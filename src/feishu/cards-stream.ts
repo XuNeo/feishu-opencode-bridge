@@ -114,11 +114,11 @@ export interface StreamCardBuildOptions {
   componentBudget?: number;
 }
 
-const DEFAULT_STREAM_CARD_COMPONENT_BUDGET = 180;
+const DEFAULT_STREAM_CARD_COMPONENT_BUDGET = 150;
 const MIN_STREAM_CARD_COMPONENT_BUDGET = 20;
 const MAX_TIMELINE_SEGMENTS = 60;
 const MAX_REASONING_SEGMENT_LENGTH = 2600;
-const MAX_TOOL_OUTPUT_LENGTH = 4000;
+const MAX_TOOL_OUTPUT_LENGTH = 1500;
 const MAX_TEXT_SEGMENT_LENGTH = 5000;
 const MAX_THINKING_PANEL_LENGTH = 2600;
 const MAX_BODY_TEXT_LENGTH = 6000;
@@ -172,28 +172,46 @@ function normalizeElementPage(elements: object[]): object[] {
   return normalized;
 }
 
+const MAX_PAGE_JSON_BYTES = 20000;
+
+function estimateJsonSize(element: object): number {
+  try {
+    return JSON.stringify(element).length;
+  } catch {
+    return 500;
+  }
+}
+
 function paginateElementsByComponentBudget(elements: object[], componentBudget: number): object[][] {
   const safeBudget = Math.max(componentBudget, MIN_STREAM_CARD_COMPONENT_BUDGET);
-  // 预留 1 个组件给 header.title（plain_text）
   const budgetForBody = Math.max(1, safeBudget - 1);
   const pages: object[][] = [];
   let currentPage: object[] = [];
   let currentCount = 0;
+  let currentBytes = 0;
 
   for (const element of elements) {
     const componentCount = Math.max(1, countComponentTags(element));
+    const elementBytes = estimateJsonSize(element);
 
-    if (currentPage.length > 0 && currentCount + componentCount > budgetForBody) {
+    const exceedsBudget = currentPage.length > 0 && (
+      currentCount + componentCount > budgetForBody ||
+      currentBytes + elementBytes > MAX_PAGE_JSON_BYTES
+    );
+
+    if (exceedsBudget) {
       const normalized = normalizeElementPage(currentPage);
       if (normalized.length > 0) {
         pages.push(normalized);
       }
       currentPage = [];
       currentCount = 0;
+      currentBytes = 0;
     }
 
     currentPage.push(element);
     currentCount += componentCount;
+    currentBytes += elementBytes;
   }
 
   const normalized = normalizeElementPage(currentPage);

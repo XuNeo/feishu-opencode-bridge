@@ -47,7 +47,7 @@ async function main() {
   const errorNoticeMap = new Map<string, string>();
   const streamCardMessageIdsMap = new Map<string, string[]>();
   const completionNotifiedSet = new Set<string>(); // 防止完成通知重复发送
-  const STREAM_CARD_COMPONENT_BUDGET = 180;
+  const STREAM_CARD_COMPONENT_BUDGET = 150;
   const CORRELATION_CACHE_TTL_MS = 10 * 60 * 1000;
 
   type CorrelationChatRef = {
