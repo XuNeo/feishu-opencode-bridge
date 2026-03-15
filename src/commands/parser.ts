@@ -19,7 +19,9 @@ export type CommandType =
   | 'status'       // 查看状态
   | 'command'      // 透传命令
   | 'permission'   // 权限响应
-  | 'send';        // 发送文件到飞书
+  | 'send'         // 发送文件到飞书
+  | 'owner'        // 所有者访问控制
+  | 'access';      // 访问控制（白名单/黑名单）
 
 export interface ParsedCommand {
   type: CommandType;
@@ -42,6 +44,10 @@ export interface ParsedCommand {
   effortReset?: boolean;
   promptEffort?: EffortLevel;
   adminAction?: 'add';
+  ownerAction?: 'on' | 'off' | 'status';
+  accessAction?: 'allow' | 'deny' | 'remove' | 'list' | 'mode' | 'status';
+  accessTarget?: string;
+  accessMode?: 'whitelist' | 'blacklist';
 }
 
 const BANG_SHELL_ALLOWED_COMMANDS = new Set([
@@ -296,6 +302,36 @@ export function parseCommand(text: string): ParsedCommand {
       case 'sendfile':
         return { type: 'send', text: args.join(' ') };
 
+      case 'owner': {
+        const sub = args[0]?.toLowerCase();
+        if (sub === 'on') return { type: 'owner', ownerAction: 'on' };
+        if (sub === 'off') return { type: 'owner', ownerAction: 'off' };
+        return { type: 'owner', ownerAction: 'status' };
+      }
+
+      case 'access': {
+        const sub = args[0]?.toLowerCase();
+        if (sub === 'allow' && args[1]) {
+          return { type: 'access', accessAction: 'allow', accessTarget: args[1] };
+        }
+        if (sub === 'deny' && args[1]) {
+          return { type: 'access', accessAction: 'deny', accessTarget: args[1] };
+        }
+        if (sub === 'remove' && args[1]) {
+          return { type: 'access', accessAction: 'remove', accessTarget: args[1] };
+        }
+        if (sub === 'list') {
+          return { type: 'access', accessAction: 'list' };
+        }
+        if (sub === 'mode' && args[1]) {
+          const mode = args[1].toLowerCase();
+          if (mode === 'whitelist' || mode === 'blacklist') {
+            return { type: 'access', accessAction: 'mode', accessMode: mode };
+          }
+        }
+        return { type: 'access', accessAction: 'status' };
+      }
+
       default:
         // 未知命令透传到OpenCode
         return {
@@ -341,6 +377,17 @@ export function getHelpText(): string {
 • \`/undo\` 撤回上一轮对话 (如果你发错或 AI 答错)
 • \`/stop\` 停止当前正在生成的回答
 • \`/compact\` 压缩当前会话上下文（调用 OpenCode summarize）
+
+🔐 **访问控制（仅 owner 可用）**
+• \`/owner\` 或 \`/owner status\` 查看仅限所有者模式状态
+• \`/owner on\` 开启仅限所有者模式（只有所有者可使用机器人）
+• \`/owner off\` 关闭仅限所有者模式（恢复白名单规则）
+• \`/access allow <open_id>\` 将用户加入白名单
+• \`/access deny <open_id>\` 将用户加入黑名单
+• \`/access remove <open_id>\` 从白名单/黑名单移除用户
+• \`/access list\` 查看当前白名单/黑名单
+• \`/access mode whitelist|blacklist\` 切换访问控制模式
+• 注：owner 为首次建群的用户，自动识别
 
 ⚙️ **会话管理**
 • \`/create_chat\` 或 \`/建群\` 打开建群卡片（下拉按 工作区/Session短ID/简介 展示，支持跨工作区）

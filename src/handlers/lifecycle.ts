@@ -68,31 +68,33 @@ export class LifecycleHandler {
 
     console.log(`[Lifecycle] 检查群 ${chatId} 成员数: ${members.length}`);
 
-    // 未配置白名单时：只要群里还有任意成员，就不自动解散
+    // 未启用访问控制时：只要群里还有任意成员，就不自动解散
     // 仅在成员数为 0 时才执行清理，避免误删仅剩 1 名用户的群
-    if (!userConfig.isWhitelistEnabled) {
+    if (!userConfig.isAccessControlEnabled) {
       if (members.length > 0) {
-        console.log(`[Lifecycle] 群 ${chatId} 未启用白名单且仍有成员，跳过解散`);
+        console.log(`[Lifecycle] 群 ${chatId} 未启用访问控制且仍有成员，跳过解散`);
         return;
       }
 
-      console.log(`[Lifecycle] 群 ${chatId} 未启用白名单且成员为 0，准备解散...`);
+      console.log(`[Lifecycle] 群 ${chatId} 未启用访问控制且成员为 0，准备解散...`);
       await this.cleanupAndDisband(chatId, stats);
       return;
     }
 
-    // 检查是否有白名单用户在群内
-    const hasAllowedUser = members.some(memberId => userConfig.allowedUsers.includes(memberId));
+    // 检查是否有 owner 或白名单用户在群内
+    const hasAllowedUser = members.some(memberId =>
+      userConfig.isOwner(memberId) || userConfig.dynamicAllowList.has(memberId)
+    );
     
     if (hasAllowedUser) {
-      console.log(`[Lifecycle] 群 ${chatId} 包含白名单用户，跳过解散检查`);
+      console.log(`[Lifecycle] 群 ${chatId} 包含 owner 或白名单用户，跳过解散检查`);
       return;
     }
 
-    // 二次确认：检查群主是否在白名单中（防止成员列表获取失败导致误删）
+    // 二次确认：检查群主是否为 owner
     const chatInfo = await feishuClient.getChat(chatId);
-    if (chatInfo && userConfig.allowedUsers.includes(chatInfo.ownerId)) {
-      console.log(`[Lifecycle] 群 ${chatId} 群主(${chatInfo.ownerId})在白名单中，跳过解散检查`);
+    if (chatInfo && userConfig.isOwner(chatInfo.ownerId)) {
+      console.log(`[Lifecycle] 群 ${chatId} 群主(${chatInfo.ownerId})为 owner，跳过解散检查`);
       return;
     }
     

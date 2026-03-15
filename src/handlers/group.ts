@@ -155,6 +155,11 @@ export class GroupHandler {
     const { chatId, content, messageId, senderId, attachments } = event;
     const trimmed = content.trim();
 
+    // 0. 检查用户是否可以使用机器人
+    if (!userConfig.canUseBot(senderId)) {
+      return;
+    }
+
     // 1. 有待回答的问题时，优先处理问题回答
     //    防止 y/n/yes/no 等回答被 parseCommand 误识别为权限响应命令
     const hasPendingQuestion = questionHandler.getByConversationKey(`chat:${chatId}`);

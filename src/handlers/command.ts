@@ -778,6 +778,14 @@ export class CommandHandler {
           }
           break;
 
+        case 'owner':
+          await this.handleOwnerCommand(chatId, messageId, context.senderId, command.ownerAction);
+          break;
+
+        case 'access':
+          await this.handleAccessCommand(chatId, messageId, context.senderId, command);
+          break;
+
         case 'compact':
           await this.handleCompact(chatId, messageId);
           break;
@@ -1829,6 +1837,151 @@ export class CommandHandler {
       await feishuClient.reply(messageId, `✅ 已发送${result.sendType === 'image' ? '图片' : '文件'}: ${result.fileName}`);
     } else {
       await feishuClient.reply(messageId, `❌ ${result.error}`);
+    }
+  }
+
+  private async handleOwnerCommand(chatId: string, messageId: string, senderId: string, action?: 'on' | 'off' | 'status'): Promise<void> {
+    // 检查是否有配置所有者
+    if (!userConfig.ownerId) {
+      await feishuClient.reply(messageId, '❌ 尚未识别所有者，请先通过私聊建群以自动确定所有者');
+      return;
+    }
+
+    // 检查发送者是否为所有者
+    if (!userConfig.isOwner(senderId)) {
+      await feishuClient.reply(messageId, '❌ 只有所有者可以使用此命令');
+      return;
+    }
+
+    switch (action) {
+      case 'on':
+        userConfig.setOwnerOnlyMode(true);
+        await feishuClient.reply(messageId, '✅ 已开启仅限所有者模式\n现在只有所有者可以使用机器人');
+        break;
+
+      case 'off':
+        userConfig.setOwnerOnlyMode(false);
+        await feishuClient.reply(messageId, '✅ 已关闭仅限所有者模式\n现在按白名单规则允许用户使用机器人');
+        break;
+
+      case 'status':
+      default:
+        const currentStatus = userConfig.ownerOnlyMode ? '开启' : '关闭';
+        const ownerInfo = userConfig.ownerId;
+        const statusText = [
+          `📋 仅限所有者模式状态: ${currentStatus}`,
+          `👤 当前所有者: ${ownerInfo}`,
+          '',
+          '💡 使用说明:',
+          '• /owner on - 开启仅限所有者模式', 
+          '• /owner off - 关闭仅限所有者模式',
+          '• /owner status - 查看当前状态',
+        ].join('\n');
+        await feishuClient.reply(messageId, statusText);
+        break;
+    }
+  }
+
+  private async handleAccessCommand(
+    chatId: string,
+    messageId: string,
+    senderId: string,
+    command: { accessAction?: string; accessTarget?: string; accessMode?: 'whitelist' | 'blacklist' }
+  ): Promise<void> {
+    if (!userConfig.isOwner(senderId)) {
+      await feishuClient.reply(messageId, '❌ 只有所有者可以使用访问控制命令');
+      return;
+    }
+
+    const { accessAction, accessTarget, accessMode } = command;
+
+    switch (accessAction) {
+      case 'allow': {
+        if (!accessTarget) {
+          await feishuClient.reply(messageId, '用法: /access allow <open_id>');
+          return;
+        }
+        userConfig.dynamicAllowList.add(accessTarget);
+        userConfig.blacklist.delete(accessTarget);
+        await feishuClient.reply(messageId, `✅ 已将 ${accessTarget} 加入白名单`);
+        break;
+      }
+
+      case 'deny': {
+        if (!accessTarget) {
+          await feishuClient.reply(messageId, '用法: /access deny <open_id>');
+          return;
+        }
+        userConfig.blacklist.add(accessTarget);
+        userConfig.dynamicAllowList.delete(accessTarget);
+        await feishuClient.reply(messageId, `✅ 已将 ${accessTarget} 加入黑名单`);
+        break;
+      }
+
+      case 'remove': {
+        if (!accessTarget) {
+          await feishuClient.reply(messageId, '用法: /access remove <open_id>');
+          return;
+        }
+        const inAllow = userConfig.dynamicAllowList.delete(accessTarget);
+        const inDeny = userConfig.blacklist.delete(accessTarget);
+        if (inAllow || inDeny) {
+          await feishuClient.reply(messageId, `✅ 已将 ${accessTarget} 从访问控制列表移除`);
+        } else {
+          await feishuClient.reply(messageId, `⚠️ ${accessTarget} 不在任何列表中`);
+        }
+        break;
+      }
+
+      case 'mode': {
+        if (!accessMode) {
+          await feishuClient.reply(messageId, '用法: /access mode whitelist|blacklist');
+          return;
+        }
+        userConfig.accessMode = accessMode;
+        const modeLabel = accessMode === 'whitelist' ? '白名单' : '黑名单';
+        await feishuClient.reply(messageId, `✅ 访问控制模式已切换为: ${modeLabel}`);
+        break;
+      }
+
+      case 'list': {
+        const lines: string[] = [
+          `📋 访问控制状态`,
+          `所有者: ${userConfig.ownerId || '(未识别)'}`,
+          `模式: ${userConfig.accessMode === 'whitelist' ? '白名单' : '黑名单'}`,
+          `仅限所有者模式: ${userConfig.ownerOnlyMode ? '开启' : '关闭'}`,
+          '',
+        ];
+        if (userConfig.dynamicAllowList.size > 0) {
+          lines.push(`白名单:\n${[...userConfig.dynamicAllowList].map((u: string) => `  • ${u}`).join('\n')}`);
+        } else {
+          lines.push('白名单: (空)');
+        }
+        if (userConfig.blacklist.size > 0) {
+          lines.push(`黑名单:\n${[...userConfig.blacklist].map((u: string) => `  • ${u}`).join('\n')}`);
+        } else {
+          lines.push('黑名单: (空)');
+        }
+        await feishuClient.reply(messageId, lines.join('\n'));
+        break;
+      }
+
+      default: {
+        const lines = [
+          `📋 访问控制状态`,
+          `模式: ${userConfig.accessMode === 'whitelist' ? '白名单' : '黑名单'}`,
+          `仅限所有者模式: ${userConfig.ownerOnlyMode ? '开启' : '关闭'}`,
+          '',
+          '命令:',
+          '• /access allow <open_id> — 加入白名单',
+          '• /access deny <open_id>  — 加入黑名单',
+          '• /access remove <open_id> — 从列表移除',
+          '• /access list — 查看所有列表',
+          '• /access mode whitelist|blacklist — 切换模式',
+        ];
+        await feishuClient.reply(messageId, lines.join('\n'));
+        break;
+      }
     }
   }
 

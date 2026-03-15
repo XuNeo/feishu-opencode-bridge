@@ -36,22 +36,73 @@ export const opencodeConfig = {
 
 // 用户配置
 export const userConfig = {
-  // 允许使用机器人的用户open_id列表
-  allowedUsers: (process.env.ALLOWED_USERS || '')
-    .split(',')
-    .map(item => item.trim())
-    .filter(item => item.length > 0),
-
   // 是否开启手动绑定已有 OpenCode 会话能力
   enableManualSessionBind: parseBooleanEnv(process.env.ENABLE_MANUAL_SESSION_BIND, true),
-  
 
   // 群聊中是否要求 @机器人 才响应普通消息（命令和待回答问题不受此限制）
   requireMention: parseBooleanEnv(process.env.REQUIRE_MENTION, true),
 
-  // 是否启用用户白名单（如果为空则不限制）
-  get isWhitelistEnabled() {
-    return this.allowedUsers.length > 0;
+  // 运行时：owner 的 open_id（首次建群时自动从 creatorId 获取）
+  _ownerId: undefined as string | undefined,
+
+  // 运行时：仅限所有者模式（可通过 /owner on/off 动态切换）
+  ownerOnlyMode: false,
+
+  // 运行时：访问控制模式（whitelist = 白名单，blacklist = 黑名单）
+  accessMode: 'whitelist' as 'whitelist' | 'blacklist',
+
+  // 运行时：动态白名单（通过 /access allow 添加）
+  dynamicAllowList: new Set<string>(),
+
+  // 运行时：黑名单（通过 /access deny 添加）
+  blacklist: new Set<string>(),
+
+  // owner = 建群用户，自动从持久化数据或首次建群获取
+  get ownerId(): string | undefined {
+    return this._ownerId;
+  },
+
+  // 设置 owner（由 chat-session store 启动时或建群时调用）
+  setOwner(userId: string): void {
+    if (!this._ownerId) {
+      this._ownerId = userId;
+      console.log(`[Config] 自动识别 owner: ${userId}`);
+    }
+  },
+
+  // 是否启用访问控制（有 owner 即视为启用）
+  get isAccessControlEnabled(): boolean {
+    return !!this._ownerId || this.dynamicAllowList.size > 0;
+  },
+
+  isOwner(userId: string): boolean {
+    return !!this._ownerId && this._ownerId === userId;
+  },
+
+  // 判断用户是否可以使用机器人
+  // - ownerOnlyMode 开启时：只有 owner 可用
+  // - accessMode=blacklist：黑名单中的用户拒绝，其余放行
+  // - 无 owner 且无白名单：全部放行（首次使用前不限制）
+  canUseBot(userId: string): boolean {
+    if (this.ownerOnlyMode) {
+      return this.isOwner(userId);
+    }
+    if (this.accessMode === 'blacklist') {
+      return !this.blacklist.has(userId);
+    }
+    // whitelist mode：无 owner 且无动态白名单时，全部放行
+    if (!this._ownerId && this.dynamicAllowList.size === 0) {
+      return true;
+    }
+    // 有 owner 时，owner 始终放行
+    if (this.isOwner(userId)) {
+      return true;
+    }
+    return this.dynamicAllowList.has(userId);
+  },
+
+  setOwnerOnlyMode(enabled: boolean): void {
+    this.ownerOnlyMode = enabled;
   },
 };
 // 模型配置

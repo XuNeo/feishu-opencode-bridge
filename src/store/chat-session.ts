@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { EffortLevel } from '../commands/effort.js';
+import { userConfig } from '../config.js';
 
 // 群组会话数据结构
 export type ChatSessionType = 'p2p' | 'group';
@@ -62,9 +63,16 @@ class ChatSessionStore {
       if (fs.existsSync(STORE_FILE)) {
         const content = fs.readFileSync(STORE_FILE, 'utf-8');
         const parsed = JSON.parse(content);
-        // 转换 object 到 Map
         this.data = new Map(Object.entries(parsed));
         console.log(`[Store] 已加载 ${this.data.size} 个群组会话`);
+
+        // 从持久化数据中自动识别 owner（取第一个 creatorId）
+        for (const session of this.data.values()) {
+          if (session.creatorId) {
+            userConfig.setOwner(session.creatorId);
+            break;
+          }
+        }
       }
     } catch (error) {
       console.error('[Store] 加载数据失败:', error);
