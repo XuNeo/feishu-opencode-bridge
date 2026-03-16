@@ -91,6 +91,36 @@ function truncateMiddleText(text: string, limit: number): string {
   return `${text.slice(0, headLength)}${marker}${text.slice(-tailLength)}`;
 }
 
+function splitTextIntoChunks(text: string, chunkSize: number): string[] {
+  if (text.length <= chunkSize) {
+    return [text];
+  }
+
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > chunkSize) {
+    let splitAt = chunkSize;
+    const paragraphBreak = remaining.lastIndexOf('\n\n', chunkSize);
+    const lineBreak = remaining.lastIndexOf('\n', chunkSize);
+
+    if (paragraphBreak > chunkSize * 0.5) {
+      splitAt = paragraphBreak + 2;
+    } else if (lineBreak > chunkSize * 0.5) {
+      splitAt = lineBreak + 1;
+    }
+
+    chunks.push(remaining.slice(0, splitAt));
+    remaining = remaining.slice(splitAt);
+  }
+
+  if (remaining.length > 0) {
+    chunks.push(remaining);
+  }
+
+  return chunks;
+}
+
 function getToolStatusLabel(status: StreamToolState['status']): { icon: string; text: string } {
   if (status === 'running') {
     return { icon: '⏳', text: '执行中' };
@@ -117,10 +147,10 @@ export interface StreamCardBuildOptions {
 const DEFAULT_STREAM_CARD_COMPONENT_BUDGET = 150;
 const MIN_STREAM_CARD_COMPONENT_BUDGET = 20;
 const MAX_TIMELINE_SEGMENTS = 60;
-const MAX_REASONING_SEGMENT_LENGTH = 2600;
+const MAX_REASONING_SEGMENT_LENGTH = 4000;
 const MAX_TOOL_OUTPUT_LENGTH = 1500;
 const MAX_TEXT_SEGMENT_LENGTH = 5000;
-const MAX_THINKING_PANEL_LENGTH = 2600;
+const MAX_THINKING_PANEL_LENGTH = 4000;
 const MAX_BODY_TEXT_LENGTH = 6000;
 
 function isHrElement(element: object): boolean {
@@ -294,11 +324,17 @@ function buildTimelineElements(segments: StreamCardSegment[]): object[] {
       if (!segment.text.trim()) {
         continue;
       }
-      const text = truncateMiddleText(segment.text, MAX_TEXT_SEGMENT_LENGTH);
-      nextElement = {
-        tag: 'markdown',
-        content: text,
-      };
+      const chunks = splitTextIntoChunks(segment.text, MAX_TEXT_SEGMENT_LENGTH);
+      for (let i = 0; i < chunks.length; i++) {
+        if (elements.length > 0 && i === 0) {
+          elements.push({ tag: 'hr' });
+        }
+        elements.push({ tag: 'markdown', content: chunks[i] });
+        if (i < chunks.length - 1) {
+          elements.push({ tag: 'hr' });
+        }
+      }
+      continue;
     } else if (segment.type === 'note') {
       const text = segment.text.trim();
       if (!text) {
@@ -469,13 +505,13 @@ function buildStreamCardElements(data: StreamCardData): object[] {
 
     // 3. 正文
     if (data.text) {
-      if (elements.length > 0) {
-        elements.push({ tag: 'hr' });
+      const chunks = splitTextIntoChunks(data.text, MAX_BODY_TEXT_LENGTH);
+      for (const chunk of chunks) {
+        if (elements.length > 0) {
+          elements.push({ tag: 'hr' });
+        }
+        elements.push({ tag: 'markdown', content: chunk });
       }
-      elements.push({
-        tag: 'markdown',
-        content: truncateMiddleText(data.text, MAX_BODY_TEXT_LENGTH),
-      });
     } else if (data.status === 'processing') {
       if (elements.length > 0) {
         elements.push({ tag: 'hr' });
