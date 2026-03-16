@@ -1828,11 +1828,12 @@ export class CommandHandler {
   private async handleSendFile(chatId: string, messageId: string, filePath: string): Promise<void> {
     const trimmed = filePath.trim();
     if (!trimmed) {
-      await feishuClient.reply(messageId, '请提供文件的绝对路径，例如:\n• /send /path/to/file.png\n• /send C:\\Users\\你\\Desktop\\图片.jpg');
+      await feishuClient.reply(messageId, '请提供文件路径，例如:\n• /send /path/to/file.png\n• /send ./relative/path.pdf');
       return;
     }
 
-    const result = await sendFileToFeishu({ filePath: trimmed, chatId });
+    const baseDirectory = chatSessionStore.getSession(chatId)?.sessionDirectory;
+    const result = await sendFileToFeishu({ filePath: trimmed, chatId, baseDirectory });
     if (result.success) {
       await feishuClient.reply(messageId, `✅ 已发送${result.sendType === 'image' ? '图片' : '文件'}: ${result.fileName}`);
     } else {

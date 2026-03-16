@@ -93,6 +93,7 @@ const FILE_TYPE_MAP: Record<string, FeishuFileType> = {
 export interface SendFileRequest {
   filePath: string;
   chatId: string;
+  baseDirectory?: string;
 }
 
 export interface SendFileResult {
@@ -116,12 +117,12 @@ function getFeishuFileType(ext: string): FeishuFileType {
 
 // 发送文件到飞书群聊
 export async function sendFileToFeishu(request: SendFileRequest): Promise<SendFileResult> {
-  const { filePath: rawPath, chatId } = request;
+  const { filePath: rawPath, chatId, baseDirectory } = request;
 
-  // 0. 去除用户可能包裹的引号
   const filePath = rawPath.replace(/^["']+|["']+$/g, '').trim();
-  // 1. 路径标准化（统一 resolve，后续所有操作均基于 resolvedPath）
-  const resolvedPath = path.resolve(filePath);
+  const resolvedPath = path.isAbsolute(filePath)
+    ? path.resolve(filePath)
+    : path.resolve(baseDirectory || process.cwd(), filePath);
   const fileName = path.basename(resolvedPath);
   const ext = path.extname(resolvedPath).toLowerCase();
 

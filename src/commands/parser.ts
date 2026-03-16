@@ -409,5 +409,5 @@ export function getHelpText(): string {
 • 如果遇到问题，试着使用 \`/panel\` 面板操作更方便。
 
  📤 **文件发送**
- • \`/send <绝对路径>\` 发送文件到群聊 (e.g. \`/send /tmp/report.pdf\` 或 \`/send C:\\Users\\你\\Desktop\\图片.jpg\`)`;
+ • \`/send <路径>\` 发送文件到群聊（支持绝对路径和相对路径，相对路径基于会话工作区）`;
 }
