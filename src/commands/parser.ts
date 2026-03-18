@@ -403,6 +403,10 @@ export function getHelpText(): string {
 • \`/undo\` 撤回上一轮对话 (如果你发错或 AI 答错)
 • \`/stop\` 停止当前正在生成的回答
 • \`/compact\` 压缩当前会话上下文（调用 OpenCode summarize）
+• \`/show\` 查看当前会话思考链/工具链显示状态
+• \`/show thinking on/off\` 开关思考链（会话级，持久化）
+• \`/show tool on/off\` 开关工具链（会话级，持久化）
+• \`/show reset\` 重置为环境变量默认值
 
 🔐 **访问控制（仅 owner 可用）**
 • \`/owner\` 或 \`/owner status\` 查看仅限所有者模式状态
