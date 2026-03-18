@@ -81,6 +81,7 @@
 | 双端撤回一致性 | 撤回时同时回滚飞书消息与 OpenCode 会话状态 | `/undo` |
 | 模型/角色/强度可视化控制 | 按会话切换模型、角色与推理强度，支持面板查看与命令操作 | `/panel`、`/model`、`/agent`、`/effort` |
 | 上下文压缩 | 在飞书直接触发会话 summarize，释放上下文窗口 | `/compact` |
+| 思考链/工具链显示控制 | 会话级开关思考过程和工具调用面板，支持 env 全局默认 | `/show`、`SHOW_THINKING_CHAIN`、`SHOW_TOOL_CHAIN` |
 | Shell 命令透传 | 白名单 `!` 命令通过 OpenCode shell 执行并回显输出 | `!ls`、`!pwd`、`!git status` |
 | 服务端鉴权兼容 | 支持 OpenCode Server Basic Auth，不怕后续默认强制密码 | `OPENCODE_SERVER_USERNAME`、`OPENCODE_SERVER_PASSWORD` |
 | 文件发送到飞书 | AI 可将电脑上的文件/截图直接发送到当前飞书群聊 | `/send`、`发送文件` |
@@ -317,6 +318,8 @@ node scripts/deploy.mjs status
 | `TOOL_WHITELIST` | 否 | `Read,Glob,Grep,Task` | 自动放行权限标识列表 |
 | `PERMISSION_REQUEST_TIMEOUT_MS` | 否 | `0` | 权限请求在桥接侧的保留时长（毫秒）；`<=0` 表示不超时，持续等待回复 |
 | `OUTPUT_UPDATE_INTERVAL` | 否 | `3000` | 输出刷新间隔（ms） |
+| `SHOW_THINKING_CHAIN` | 否 | `true` | 是否显示思考链卡片块；`false` 时隐藏，可用 `/show thinking on` 在会话级覆盖 |
+| `SHOW_TOOL_CHAIN` | 否 | `true` | 是否显示工具链卡片块；`false` 时隐藏，可用 `/show tool on` 在会话级覆盖 |
 | `ATTACHMENT_MAX_SIZE` | 否 | `52428800` | 附件大小上限（字节） |
 | `COMPLETION_NOTIFY` | 否 | `reaction` | AI 完成时通知方式：`mention`（@用户）/ `reaction`（表情回复）/ `both`（两者都发）/ `none`（关闭） |
 
@@ -417,6 +420,10 @@ node scripts/deploy.mjs status
 | `/clear free session` / `/clear_free_session` | 手动触发一次与启动清理同规则的兜底扫描 |
 | `/clear free session <sessionId>` / `/clear_free_session <sessionId>` | 删除指定 OpenCode 会话，并移除所有本地绑定映射 |
 | `/compact` | 调用 OpenCode summarize，压缩当前会话上下文 |
+| `/show` | 查看当前会话思考链/工具链显示状态 |
+| `/show thinking on/off` | 开关思考链显示（会话级，持久化） |
+| `/show tool on/off` | 开关工具链显示（会话级，持久化） |
+| `/show reset` | 重置为环境变量默认值 |
 | `!<shell命令>` | 透传白名单 shell 命令（如 `!ls`、`!pwd`、`!mkdir`、`!git status`） |
 | `/create_chat` / `/建群` | 私聊中调出建群卡片（下拉选择后点击"创建群聊"生效） |
 | `/send <绝对路径>` | 发送指定路径的文件到当前群聊 |
