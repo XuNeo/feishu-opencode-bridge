@@ -21,24 +21,25 @@ export type CommandType =
   | 'permission'   // 权限响应
   | 'send'         // 发送文件到飞书
   | 'owner'        // 所有者访问控制
-  | 'access';      // 访问控制（白名单/黑名单）
+  | 'access'       // 访问控制（白名单/黑名单）
+  | 'show';        // 可见性开关（thinking/tool）
 
 export interface ParsedCommand {
   type: CommandType;
-  text?: string;           // prompt类型的文本内容
-  modelName?: string;      // model类型的模型名称
-  agentName?: string;      // agent类型的名称
+  text?: string;
+  modelName?: string;
+  agentName?: string;
   roleAction?: 'create';
   roleSpec?: string;
   sessionAction?: 'new' | 'switch' | 'list';
-  sessionId?: string;      // session switch的目标ID
-  sessionDirectory?: string; // session new 指定的工作区目录
-  clearScope?: 'all' | 'free_session'; // 清理范围
+  sessionId?: string;
+  sessionDirectory?: string;
+  clearScope?: 'all' | 'free_session';
   clearSessionId?: string;
   permissionResponse?: 'y' | 'n' | 'yes' | 'no';
-  commandName?: string;    // 透传命令名称
-  commandArgs?: string;    // 透传命令参数
-  commandPrefix?: '/' | '!'; // 透传命令前缀
+  commandName?: string;
+  commandArgs?: string;
+  commandPrefix?: '/' | '!';
   effortLevel?: EffortLevel;
   effortRaw?: string;
   effortReset?: boolean;
@@ -48,6 +49,8 @@ export interface ParsedCommand {
   accessAction?: 'allow' | 'deny' | 'remove' | 'list' | 'mode' | 'status';
   accessTarget?: string;
   accessMode?: 'whitelist' | 'blacklist';
+  showTarget?: 'thinking' | 'tool';
+  showValue?: boolean | 'reset';
 }
 
 const BANG_SHELL_ALLOWED_COMMANDS = new Set([
@@ -330,6 +333,29 @@ export function parseCommand(text: string): ParsedCommand {
           }
         }
         return { type: 'access', accessAction: 'status' };
+      }
+
+      case 'show': {
+        const sub = args[0]?.toLowerCase();
+        const val = args[1]?.toLowerCase();
+
+        if (!sub) {
+          return { type: 'show' };
+        }
+
+        if (sub === 'thinking' || sub === 'tool') {
+          const target = sub as 'thinking' | 'tool';
+          if (val === 'on') return { type: 'show', showTarget: target, showValue: true };
+          if (val === 'off') return { type: 'show', showTarget: target, showValue: false };
+          if (val === 'reset') return { type: 'show', showTarget: target, showValue: 'reset' };
+          return { type: 'show', showTarget: target };
+        }
+
+        if (sub === 'reset') {
+          return { type: 'show', showValue: 'reset' };
+        }
+
+        return { type: 'show' };
       }
 
       default:

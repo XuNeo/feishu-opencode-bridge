@@ -798,6 +798,10 @@ export class CommandHandler {
           await this.handleAccessCommand(chatId, messageId, context.senderId, command);
           break;
 
+        case 'show':
+          await this.handleShow(chatId, messageId, command.showTarget, command.showValue);
+          break;
+
         case 'compact':
           await this.handleCompact(chatId, messageId);
           break;
@@ -1998,7 +2002,55 @@ export class CommandHandler {
     }
   }
 
-  // 公开以供外部调用（如消息撤回事件）
+  private async handleShow(
+    chatId: string,
+    messageId: string,
+    target?: 'thinking' | 'tool',
+    value?: boolean | 'reset'
+  ): Promise<void> {
+    if (target && value !== undefined) {
+      const newValue = value === 'reset' ? null : value;
+      chatSessionStore.updateConfig(chatId, {
+        ...(target === 'thinking' ? { showThinkingChain: newValue } : {}),
+        ...(target === 'tool' ? { showToolChain: newValue } : {}),
+      });
+
+      if (value === 'reset') {
+        await feishuClient.reply(messageId, `✅ ${target === 'thinking' ? '思考链' : '工具链'} 显示已重置为默认`);
+      } else {
+        await feishuClient.reply(messageId, `✅ ${target === 'thinking' ? '思考链' : '工具链'} 显示已${value ? '开启' : '关闭'}`);
+      }
+      return;
+    }
+
+    if (!target && value === 'reset') {
+      chatSessionStore.updateConfig(chatId, { showThinkingChain: null, showToolChain: null });
+      await feishuClient.reply(messageId, '✅ 思考链与工具链显示已重置为平台/全局默认');
+      return;
+    }
+
+    if (target) {
+      const vis = chatSessionStore.getVisibilityConfig(chatId);
+      const current = target === 'thinking' ? vis.showThinkingChain : vis.showToolChain;
+      await feishuClient.reply(messageId, `${target === 'thinking' ? '思考链' : '工具链'} 当前状态: ${current ? '开启' : '关闭'}`);
+      return;
+    }
+
+    const vis = chatSessionStore.getVisibilityConfig(chatId);
+    const lines = [
+      '📊 **当前可见性配置**',
+      `• 思考链 (thinking): ${vis.showThinkingChain ? '✅ 开启' : '❌ 关闭'}`,
+      `• 工具链 (tool): ${vis.showToolChain ? '✅ 开启' : '❌ 关闭'}`,
+      '',
+      '命令:',
+      '• `/show thinking on/off` — 会话级开关思考链',
+      '• `/show tool on/off` — 会话级开关工具链',
+      '• `/show thinking reset` — 重置为平台/全局默认',
+      '• `/show reset` — 重置两项为默认',
+    ];
+    await feishuClient.reply(messageId, lines.join('\n'));
+  }
+
   public async handleUndo(chatId: string, triggerMessageId?: string): Promise<void> {
     // 0. 删除触发 undo 的命令消息（如果存在）
     if (triggerMessageId) {

@@ -1,11 +1,39 @@
 import 'dotenv/config';
 
+function normalizeBooleanToken(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  let normalized = value.trim();
+  if (!normalized) return undefined;
+  // 兼容行内注释写法：SHOW_X=false # note / SHOW_X=false // note
+  normalized = normalized
+    .replace(/\s+#.*$/, '')
+    .replace(/\s+\/\/.*$/, '')
+    .trim();
+  if (!normalized) return undefined;
+  if (
+    (normalized.startsWith('"') && normalized.endsWith('"')) ||
+    (normalized.startsWith("'") && normalized.endsWith("'"))
+  ) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+  return normalized ? normalized.toLowerCase() : undefined;
+}
+
 function parseBooleanEnv(value: string | undefined, fallback: boolean): boolean {
-  if (!value) return fallback;
-  const normalized = value.trim().toLowerCase();
+  const normalized = normalizeBooleanToken(value);
+  if (!normalized) return fallback;
   if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
   if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
   return fallback;
+}
+
+// 返回 boolean | undefined：undefined 表示"未配置"，供三层优先级覆盖链使用
+export function parseOptionalBooleanEnv(value: string | undefined): boolean | undefined {
+  const normalized = normalizeBooleanToken(value);
+  if (!normalized) return undefined;
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return undefined;
 }
 
 function parseNonNegativeIntEnv(value: string | undefined, fallback: number): number {
@@ -126,12 +154,18 @@ export const permissionConfig = {
 };
 
 // 输出配置
+const showThinkingChain = parseBooleanEnv(process.env.SHOW_THINKING_CHAIN, true);
+const showToolChain = parseBooleanEnv(process.env.SHOW_TOOL_CHAIN, true);
+
 export const outputConfig = {
-  // 输出更新间隔（毫秒）
   updateInterval: parseInt(process.env.OUTPUT_UPDATE_INTERVAL || '3000', 10),
-  
-  // 单条消息最大长度（飞书限制）
   maxMessageLength: 4000,
+  showThinkingChain,
+  showToolChain,
+  feishu: {
+    showThinkingChain,
+    showToolChain,
+  },
 };
 
 // 附件配置

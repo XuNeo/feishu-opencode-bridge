@@ -11,7 +11,9 @@
     "deploy:bridge": "node scripts/deploy.mjs deploy",
     "manage:bridge": "node scripts/deploy.mjs menu",
     "start:bridge": "node scripts/start.mjs",
-    "stop:bridge": "node scripts/stop.mjs"
+    "stop:bridge": "node scripts/stop.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [
     "feishu",
@@ -29,7 +31,8 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.0"
   },
   "engines": {
     "node": ">=18.0.0"

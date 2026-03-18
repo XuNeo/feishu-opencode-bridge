@@ -1,7 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { EffortLevel } from '../commands/effort.js';
-import { userConfig } from '../config.js';
+import { userConfig, outputConfig } from '../config.js';
+
+export interface SessionVisibilityConfig {
+  showThinkingChain: boolean;
+  showToolChain: boolean;
+}
 
 // 群组会话数据结构
 export type ChatSessionType = 'p2p' | 'group';
@@ -22,6 +27,9 @@ interface ChatSessionData {
   preferredModel?: string; // e.g., "openai:gpt-4"
   preferredAgent?: string;
   preferredEffort?: EffortLevel;
+  // 会话级可见性开关；undefined 表示跟随平台/全局默认
+  showThinkingChain?: boolean;
+  showToolChain?: boolean;
   interactionHistory: InteractionRecord[];
 }
 
@@ -252,7 +260,13 @@ class ChatSessionStore {
   }
 
   // 更新会话配置 (模型/角色/强度)
-  updateConfig(chatId: string, config: { preferredModel?: string; preferredAgent?: string; preferredEffort?: EffortLevel }): void {
+  updateConfig(chatId: string, config: {
+    preferredModel?: string;
+    preferredAgent?: string;
+    preferredEffort?: EffortLevel;
+    showThinkingChain?: boolean | null;
+    showToolChain?: boolean | null;
+  }): void {
     const session = this.data.get(chatId);
     if (session) {
       if ('preferredModel' in config) {
@@ -278,6 +292,23 @@ class ChatSessionStore {
           delete session.preferredEffort;
         }
       }
+
+      if ('showThinkingChain' in config) {
+        if (config.showThinkingChain === null || config.showThinkingChain === undefined) {
+          delete session.showThinkingChain;
+        } else {
+          session.showThinkingChain = config.showThinkingChain;
+        }
+      }
+
+      if ('showToolChain' in config) {
+        if (config.showToolChain === null || config.showToolChain === undefined) {
+          delete session.showToolChain;
+        } else {
+          session.showToolChain = config.showToolChain;
+        }
+      }
+
       this.save();
     }
   }
@@ -410,6 +441,14 @@ class ChatSessionStore {
   // 获取所有群聊ID（用于启动清理）
   getAllChatIds(): string[] {
     return Array.from(this.data.keys());
+  }
+
+  getVisibilityConfig(chatId: string): SessionVisibilityConfig {
+    const session = this.data.get(chatId);
+    return {
+      showThinkingChain: session?.showThinkingChain ?? outputConfig.feishu.showThinkingChain,
+      showToolChain: session?.showToolChain ?? outputConfig.feishu.showToolChain,
+    };
   }
 }
 

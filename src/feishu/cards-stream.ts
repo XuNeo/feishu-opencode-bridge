@@ -1,5 +1,8 @@
 export * from './cards.js';
 
+import { outputConfig } from '../config.js';
+
+
 export type StreamToolState = {
   name: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
@@ -144,6 +147,12 @@ export interface StreamCardBuildOptions {
   componentBudget?: number;
 }
 
+export interface VisibilityOptions {
+  showThinking?: boolean;
+  showTools?: boolean;
+}
+
+
 const DEFAULT_STREAM_CARD_COMPONENT_BUDGET = 150;
 const MIN_STREAM_CARD_COMPONENT_BUDGET = 20;
 const MAX_TIMELINE_SEGMENTS = 60;
@@ -256,7 +265,7 @@ function paginateElementsByComponentBudget(elements: object[], componentBudget: 
   return pages;
 }
 
-function buildTimelineElements(segments: StreamCardSegment[]): object[] {
+function buildTimelineElements(segments: StreamCardSegment[], visibility?: VisibilityOptions): object[] {
   const elements: object[] = [];
   const visibleSegments = segments.slice(-MAX_TIMELINE_SEGMENTS);
 
@@ -264,6 +273,9 @@ function buildTimelineElements(segments: StreamCardSegment[]): object[] {
     let nextElement: object | null = null;
 
     if (segment.type === 'reasoning') {
+      if (visibility?.showThinking === false) {
+        continue;
+      }
       const text = segment.text.trim();
       if (!text) {
         continue;
@@ -287,6 +299,9 @@ function buildTimelineElements(segments: StreamCardSegment[]): object[] {
         ],
       };
     } else if (segment.type === 'tool') {
+      if (visibility?.showTools === false) {
+        continue;
+      }
       const statusInfo = getToolStatusLabel(segment.status);
       const toolKindLabel = segment.kind === 'subtask' ? '子任务' : '工具';
       const output = segment.output?.trim() ? truncateMiddleText(segment.output.trim(), MAX_TOOL_OUTPUT_LENGTH) : '';
@@ -447,12 +462,12 @@ function buildPendingQuestionElements(question: StreamCardPendingQuestion): obje
   return blocks;
 }
 
-function buildStreamCardElements(data: StreamCardData): object[] {
+function buildStreamCardElements(data: StreamCardData, visibility?: VisibilityOptions): object[] {
   const elements: object[] = [];
   const thinkingText = data.thinking.trim();
 
   const timelineElements = Array.isArray(data.segments) && data.segments.length > 0
-    ? buildTimelineElements(data.segments)
+    ? buildTimelineElements(data.segments, visibility)
     : [];
 
   if (timelineElements.length > 0) {
@@ -460,8 +475,7 @@ function buildStreamCardElements(data: StreamCardData): object[] {
   }
 
   if (timelineElements.length === 0) {
-    // 1. 思考过程（原生折叠面板）
-    if (thinkingText) {
+    if (thinkingText && visibility?.showThinking !== false) {
       const renderedThinking = truncateMiddleText(thinkingText, MAX_THINKING_PANEL_LENGTH);
       elements.push({
         tag: 'collapsible_panel',
@@ -481,8 +495,7 @@ function buildStreamCardElements(data: StreamCardData): object[] {
       });
     }
 
-    // 2. 工具调用列表
-    if (data.tools.length > 0) {
+    if (data.tools.length > 0 && visibility?.showTools !== false) {
       if (elements.length > 0) {
         elements.push({ tag: 'hr' });
       }
@@ -581,8 +594,16 @@ function buildStreamCardPayload(
   };
 }
 
-export function buildStreamCards(data: StreamCardData, options?: StreamCardBuildOptions): object[] {
-  const allElements = buildStreamCardElements(data);
+export function buildStreamCards(
+  data: StreamCardData,
+  options?: StreamCardBuildOptions,
+  visibility?: VisibilityOptions
+): object[] {
+  const resolvedVisibility: VisibilityOptions = {
+    showThinking: visibility?.showThinking ?? outputConfig.feishu.showThinkingChain,
+    showTools: visibility?.showTools ?? outputConfig.feishu.showToolChain,
+  };
+  const allElements = buildStreamCardElements(data, resolvedVisibility);
   const statusColor: 'blue' | 'green' | 'red' = data.status === 'processing'
     ? 'blue'
     : data.status === 'completed'
@@ -605,6 +626,6 @@ export function buildStreamCards(data: StreamCardData, options?: StreamCardBuild
   });
 }
 
-export function buildStreamCard(data: StreamCardData): object {
-  return buildStreamCards(data)[0];
+export function buildStreamCard(data: StreamCardData, visibility?: VisibilityOptions): object {
+  return buildStreamCards(data, undefined, visibility)[0];
 }

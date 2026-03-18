@@ -17,6 +17,7 @@ import {
   type StreamCardSegment,
   type StreamCardPendingPermission,
   type StreamCardPendingQuestion,
+  type VisibilityOptions,
 } from './feishu/cards-stream.js';
 
 async function main() {
@@ -936,7 +937,12 @@ async function main() {
       ...(pendingPermission ? { pendingPermission } : {}),
       ...(pendingQuestion ? { pendingQuestion } : {}),
       status,
-      showThinking: false,
+    };
+
+    const sessionVisibility = chatSessionStore.getVisibilityConfig(buffer.chatId);
+    const cardVisibility: VisibilityOptions = {
+      showThinking: sessionVisibility.showThinkingChain,
+      showTools: sessionVisibility.showToolChain,
     };
 
     const cards = buildStreamCards(
@@ -946,7 +952,8 @@ async function main() {
       },
       {
         componentBudget: STREAM_CARD_COMPONENT_BUDGET,
-      }
+      },
+      cardVisibility
     );
 
     const nextMessageIds: string[] = [];
