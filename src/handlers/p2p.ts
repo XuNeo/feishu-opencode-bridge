@@ -459,6 +459,11 @@ export class P2PHandler {
     const newChatId = createResult.chatId;
     console.log(`[P2P] 群聊已创建，ID: ${newChatId}`);
 
+    const transferred = await feishuClient.transferChatOwner(newChatId, openId);
+    if (!transferred) {
+      console.warn(`[P2P] 群主转让失败，群 ${newChatId} 群主仍为 bot`);
+    }
+
     const userInGroup = await this.ensureUserInGroup(newChatId, openId, createResult.invalidUserIds);
     if (!userInGroup.ok) {
       await feishuClient.disbandChat(newChatId);

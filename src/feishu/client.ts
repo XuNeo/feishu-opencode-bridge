@@ -915,6 +915,20 @@ class FeishuClient extends EventEmitter {
     }
   }
 
+  async transferChatOwner(chatId: string, newOwnerOpenId: string): Promise<boolean> {
+    try {
+      const res = await this.client.im.chat.update({
+        path: { chat_id: chatId },
+        params: { user_id_type: 'open_id' },
+        data: { owner_id: newOwnerOpenId },
+      });
+      return res.code === 0;
+    } catch (e) {
+      console.warn(`[Feishu] 转让群主失败 chatId=${chatId}:`, e instanceof Error ? e.message : e);
+      return false;
+    }
+  }
+
   // 解散群聊
   async disbandChat(chatId: string): Promise<boolean> {
     try {
