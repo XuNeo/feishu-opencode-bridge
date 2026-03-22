@@ -976,13 +976,56 @@ async function main() {
           continue;
         }
 
-        console.warn(`[Card][DIAG] updateCard 失败，尝试 sendCard 替代: key=${buffer.key}, msgId=${existingMessageId.slice(0, 16)}`);
+        // updateCard 失败，可能是卡片过大触发 230099/200800
+        // 尝试使用更小的组件预算重新分页
+        console.warn(`[Card] updateCard 失败，尝试更小预算分页重试: key=${buffer.key}, msgId=${existingMessageId.slice(0, 16)}`);
+        const smallerBudget = Math.floor(STREAM_CARD_COMPONENT_BUDGET / 2);
+        const repagedCards = buildStreamCards(
+          {
+            ...cardData,
+            messageId: existingMessageIds[0] || undefined,
+          },
+          { componentBudget: smallerBudget },
+          cardVisibility
+        );
+
+        // 如果分页后有多张卡片，需要处理多消息更新
+        let repageSuccess = false;
+        if (repagedCards.length > 1) {
+          // 更新原消息为第一张卡片
+          const firstUpdated = await feishuClient.updateCard(existingMessageId, repagedCards[0]);
+          if (firstUpdated) {
+            nextMessageIds.push(existingMessageId);
+            // 发送后续卡片作为新消息
+            for (let i = 1; i < repagedCards.length; i++) {
+              const newMsgId = await feishuClient.sendCard(buffer.chatId, repagedCards[i]);
+              if (newMsgId) {
+                nextMessageIds.push(newMsgId);
+              }
+            }
+            repageSuccess = true;
+          }
+        } else if (repagedCards.length === 1) {
+          // 只有一张卡片，尝试更新
+          const singleUpdated = await feishuClient.updateCard(existingMessageId, repagedCards[0]);
+          if (singleUpdated) {
+            nextMessageIds.push(existingMessageId);
+            repageSuccess = true;
+          }
+        }
+
+        if (repageSuccess) {
+          continue;
+        }
+
+        // 分页重试失败，回退到删除重建逻辑
+        console.warn(`[Card] 分页重试失败，回退到删除重建: key=${buffer.key}`);
         const replacementMessageId = await feishuClient.sendCard(buffer.chatId, card);
         if (replacementMessageId) {
           void feishuClient.deleteMessage(existingMessageId).catch(() => undefined);
           nextMessageIds.push(replacementMessageId);
         } else {
-          console.error(`[Card][DIAG] sendCard 替代也失败: key=${buffer.key}`);
+          console.error(`[Card] sendCard 替代也失败: key=${buffer.key}`);
           nextMessageIds.push(existingMessageId);
         }
         continue;

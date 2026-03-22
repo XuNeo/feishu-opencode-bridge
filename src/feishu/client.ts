@@ -750,23 +750,10 @@ class FeishuClient extends EventEmitter {
         }
       }
 
+      // 检测到卡片构建失败 (230099/200800)，返回 false 让调用方处理分页
       if (isUniversalCardBuildFailure(formatted.responseData)) {
-        console.warn(`[飞书] 更新卡片触发 230099/200800，尝试发送精简卡片: msgId=${messageId}`);
-        try {
-          const fallbackData = {
-            msg_type: 'interactive',
-            content: JSON.stringify(buildFallbackInteractiveCard(card)),
-          } as unknown as { content: string };
-          await this.client.im.message.patch({
-            path: { message_id: messageId },
-            data: fallbackData,
-          });
-          console.log(`[飞书] 精简卡片更新成功: msgId=${messageId.slice(0, 16)}...`);
-          return true;
-        } catch (fallbackError) {
-          const fallbackFormatted = formatError(fallbackError);
-          console.error(`[飞书] 精简卡片更新失败: ${fallbackFormatted.message}`);
-        }
+        console.warn(`[飞书] 更新卡片触发 230099/200800，需要分页处理: msgId=${messageId}`);
+        // 不再截断，返回 false 让调用方使用分页机制重试
       }
       return false;
     }
@@ -818,27 +805,10 @@ class FeishuClient extends EventEmitter {
         return null;
       }
 
+      // 检测到卡片构建失败 (230099/200800)，返回 null 让调用方处理分页
       if (isUniversalCardBuildFailure(formatted.responseData)) {
-        console.warn(`[飞书] 发送卡片触发 230099/200800，尝试发送精简卡片: chatId=${chatId}`);
-        try {
-          const fallbackResponse = await this.client.im.message.create({
-            params: { receive_id_type: 'chat_id' },
-            data: {
-              receive_id: chatId,
-              msg_type: 'interactive',
-              content: JSON.stringify(buildFallbackInteractiveCard(card)),
-            },
-          });
-
-          const fallbackMsgId = fallbackResponse.data?.message_id || null;
-          if (fallbackMsgId) {
-            console.log(`[飞书] 精简卡片发送成功: msgId=${fallbackMsgId.slice(0, 16)}...`);
-          }
-          return fallbackMsgId;
-        } catch (fallbackError) {
-          const fallbackFormatted = formatError(fallbackError);
-          console.error(`[飞书] 精简卡片发送失败: ${fallbackFormatted.message}`);
-        }
+        console.warn(`[飞书] 发送卡片触发 230099/200800，需要分页处理: chatId=${chatId}`);
+        // 不再截断，返回 null 让调用方使用分页机制重试
       }
 
       console.error(`[飞书] 发送卡片失败: code=${errCode}, ${formatted.message}`);
